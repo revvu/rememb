@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import ReactPlayer from "react-player/youtube";
+import ReactPlayer from "react-player";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, ChevronLeft, Brain, FileText, Play, Pause, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -56,7 +56,7 @@ export default function LearningPage() {
           <Button
             variant={readyForChallenge ? "default" : "secondary"}
             size="sm"
-            onClick={() => router.push(`/learn/${params.sourceId}/challenge`)}
+            onClick={() => router.push(`/learn/${(params as any).sourceId}/challenge`)}
             className={`transition-all duration-500 ${readyForChallenge ? "animate-pulse shadow-[0_0_15px_rgba(var(--primary),0.5)]" : "opacity-50"}`}
           >
             <Brain className="w-4 h-4 mr-2" />
@@ -73,21 +73,24 @@ export default function LearningPage() {
         {/* Video Area */}
         <div className="flex-1 flex items-center justify-center bg-black relative group">
           <div className="w-full h-full max-w-6xl max-h-[80vh] aspect-video shadow-2xl rounded-lg overflow-hidden border border-white/10">
-            <ReactPlayer
-              url={videoUrl}
-              width="100%"
-              height="100%"
-              playing={isPlaying}
-              controls
-              onProgress={({ played }) => setProgress(played * 100)}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              config={{
-                youtube: {
-                  playerVars: { showinfo: 0, modestbranding: 1 }
-                }
-              }}
-            />
+            {(() => {
+              const ReactPlayerAny = ReactPlayer as any;
+              return <ReactPlayerAny
+                url={videoUrl}
+                width="100%"
+                height="100%"
+                playing={isPlaying}
+                controls
+                onProgress={(state: any) => setProgress(state.played * 100)}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                config={{
+                  youtube: {
+                    playerVars: { showinfo: 0, modestbranding: 1 }
+                  } as any
+                }}
+              />
+            })()}
           </div>
 
           {/* Ambient Glow */}
