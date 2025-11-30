@@ -95,7 +95,13 @@ try {
   const { PrismaClient } = require('@prisma/client');
   const globalForPrisma = globalThis as unknown as { prisma: any };
 
-  prisma = globalForPrisma.prisma ?? new PrismaClient();
+  // Use pooled connection for runtime (better for serverless)
+  // Falls back to DATABASE_URL if DATABASE_URL_POOLED not set
+  const datasourceUrl = process.env.DATABASE_URL_POOLED || process.env.DATABASE_URL;
+
+  prisma = globalForPrisma.prisma ?? new PrismaClient({
+    datasourceUrl
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     globalForPrisma.prisma = prisma;
