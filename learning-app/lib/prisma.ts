@@ -95,10 +95,7 @@ try {
   const { PrismaClient } = require('@prisma/client');
   const globalForPrisma = globalThis as unknown as { prisma: any };
 
-  // Prisma 7 requires passing datasourceUrl to constructor
-  prisma = globalForPrisma.prisma ?? new PrismaClient({
-    datasourceUrl: process.env.DATABASE_URL
-  });
+  prisma = globalForPrisma.prisma ?? new PrismaClient();
 
   if (process.env.NODE_ENV !== 'production') {
     globalForPrisma.prisma = prisma;
