@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import ReactPlayer from "react-player";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
+
+// Dynamic import to avoid SSR issues with ReactPlayer
+const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
 import { ChevronRight, ChevronLeft, Brain, FileText, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -125,6 +128,9 @@ export default function LearningPage() {
   const notes = parseTranscriptNotes(source.transcript);
   const keyConcepts = extractKeyConcepts(source.transcript);
 
+  // Debug logging
+  console.log('Video URL:', source.url);
+
   return (
     <div className="h-screen w-full flex flex-col bg-background overflow-hidden">
       {/* Header */}
@@ -163,27 +169,24 @@ export default function LearningPage() {
         {/* Video Area */}
         <div className="flex-1 flex items-center justify-center bg-black relative group">
           <div className="w-full h-full max-w-6xl max-h-[80vh] aspect-video shadow-2xl rounded-lg overflow-hidden border border-white/10">
-            {(() => {
-              const ReactPlayerAny = ReactPlayer as any;
-              return <ReactPlayerAny
-                url={source.url}
-                width="100%"
-                height="100%"
-                playing={isPlaying}
-                controls
-                onProgress={(state: { played: number; playedSeconds: number }) => {
-                  setProgress(state.played * 100);
-                  setCurrentTime(state.playedSeconds);
-                }}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                config={{
-                  youtube: {
-                    playerVars: { showinfo: 0, modestbranding: 1 }
-                  } as any
-                }}
-              />
-            })()}
+            <ReactPlayer
+              url={source.url}
+              width="100%"
+              height="100%"
+              playing={isPlaying}
+              controls
+              onProgress={(state) => {
+                setProgress(state.played * 100);
+                setCurrentTime(state.playedSeconds);
+              }}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              config={{
+                youtube: {
+                  playerVars: { showinfo: 0, modestbranding: 1 }
+                }
+              }}
+            />
           </div>
 
           {/* Ambient Glow */}
