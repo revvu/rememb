@@ -49,10 +49,14 @@ export default function ChallengePage() {
     try {
       const res = await fetch("/api/challenge/evaluate", {
         method: "POST",
-        body: JSON.stringify({ answer }),
+        body: JSON.stringify({
+          answer,
+          question: problems[currentProblemIndex].text
+        }),
       });
       const data = await res.json();
       setFeedback(data.feedback);
+      // You might want to store isCorrect to change UI state, but for now we just show feedback
       setStep("feedback");
     } catch (error) {
       console.error("Evaluation failed", error);

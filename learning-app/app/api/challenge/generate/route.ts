@@ -1,30 +1,85 @@
 import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY || "",
+});
 
 export async function POST() {
-  // Simulate network delay
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json(
+        { error: "ANTHROPIC_API_KEY is not set" },
+        { status: 500 }
+      );
+    }
 
-  // Mocked response
-  const problems = [
-    {
-      id: "p1",
-      type: "concept",
-      text: "Explain why a single-layer perceptron cannot solve the XOR problem, and how adding a hidden layer resolves this.",
-      difficulty: "Medium",
-    },
-    {
-      id: "p2",
-      type: "math",
-      text: "Given a sigmoid activation function σ(z) = 1 / (1 + e^(-z)), derive its derivative σ'(z) in terms of σ(z).",
-      difficulty: "Hard",
-    },
-    {
-      id: "p3",
-      type: "code",
-      text: "Implement a simple neuron forward pass in Python that takes inputs [x1, x2] and weights [w1, w2] with a bias b, using a ReLU activation function.",
-      difficulty: "Medium",
-    },
-  ];
+    const msg = await anthropic.messages.create({
+      model: "claude-3-opus-20240229",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: `
+            You are an expert tutor in Deep Learning.
+            Generate 3 distinct challenge problems based on the topic "Neural Networks" (specifically: neurons, perceptrons, weights, biases, sigmoid activation).
+            
+            The problems should be of these types:
+            1. "concept": Test conceptual understanding.
+            2. "math": A mathematical derivation or calculation question.
+            3. "code": A small coding task (Python/Pseudocode).
 
-  return NextResponse.json({ problems });
+            Output strictly valid JSON with this structure:
+            {
+              "problems": [
+                {
+                  "id": "p1",
+                  "type": "concept",
+                  "text": "...",
+                  "difficulty": "Medium"
+                },
+                {
+                  "id": "p2",
+                  "type": "math",
+                  "text": "...",
+                  "difficulty": "Hard"
+                },
+                {
+                  "id": "p3",
+                  "type": "code",
+                  "text": "...",
+                  "difficulty": "Medium"
+                }
+              ]
+            }
+            Do not include markdown formatting like \`\`\`json. Just the raw JSON string.
+          `,
+        },
+      ],
+    });
+
+    const text = (msg.content[0] as any).text;
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+
+    if (firstBrace === -1 || lastBrace === -1) {
+      throw new Error("No JSON found in response");
+    }
+
+    const cleanText = text.substring(firstBrace, lastBrace + 1);
+    const data = JSON.parse(cleanText);
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Error generating challenges:", error);
+    if (error instanceof Anthropic.APIError) {
+      console.error("Anthropic API Error Status:", error.status);
+      console.error("Anthropic API Error Message:", error.message);
+      console.error("Anthropic API Error Details:", error.error);
+    }
+    return NextResponse.json(
+      { error: "Failed to generate challenges", details: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
 }
