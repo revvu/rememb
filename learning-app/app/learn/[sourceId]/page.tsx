@@ -6,9 +6,8 @@ import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Dynamic import to avoid SSR issues with ReactPlayer
-// Using react-player/youtube for YouTube-specific player
 const ReactPlayer = dynamic(
-  () => import("react-player/youtube"),
+  () => import("react-player/lazy"),
   { ssr: false, loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-white">Loading player...</div> }
 );
 import { ChevronRight, ChevronLeft, Brain, FileText, Loader2, AlertCircle } from "lucide-react";
