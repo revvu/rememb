@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { YoutubeTranscript } from 'youtube-transcript'
-import { Innertube } from 'youtubei.js'
 import prisma from '@/lib/prisma'
 
 // Extract video ID from various YouTube URL formats
@@ -28,6 +27,37 @@ function formatTranscript(segments: { text: string; offset: number; duration: nu
       return `${timestamp} ${segment.text}`
     })
     .join('\n')
+}
+
+// Get video metadata using YouTube oEmbed API (no auth required, no filesystem)
+async function getVideoMetadata(videoId: string): Promise<{ title: string; thumbnail: string | null }> {
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+    const response = await fetch(oembedUrl)
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch oEmbed data')
+    }
+
+    const data = await response.json()
+    return {
+      title: data.title || 'Untitled Video',
+      thumbnail: data.thumbnail_url || null
+    }
+  } catch (error) {
+    console.error('oEmbed fetch error:', error)
+    return {
+      title: 'Untitled Video',
+      thumbnail: null
+    }
+  }
+}
+
+// Estimate duration from transcript (last segment offset + duration)
+function estimateDuration(segments: { offset: number; duration: number }[]): number {
+  if (segments.length === 0) return 0
+  const lastSegment = segments[segments.length - 1]
+  return Math.ceil((lastSegment.offset + lastSegment.duration) / 1000) // Convert ms to seconds
 }
 
 export async function POST(request: NextRequest) {
@@ -61,9 +91,11 @@ export async function POST(request: NextRequest) {
 
     // Fetch transcript
     let transcript: string
+    let duration = 0
     try {
       const transcriptSegments = await YoutubeTranscript.fetchTranscript(videoId)
       transcript = formatTranscript(transcriptSegments)
+      duration = estimateDuration(transcriptSegments)
     } catch (transcriptError) {
       console.error('Transcript fetch error:', transcriptError)
       return NextResponse.json(
@@ -72,22 +104,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Fetch video metadata using youtubei.js
-    let title = 'Untitled Video'
-    let duration = 0
-    let thumbnail: string | null = null
-
-    try {
-      const youtube = await Innertube.create()
-      const videoInfo = await youtube.getBasicInfo(videoId)
-
-      title = videoInfo.basic_info.title || title
-      duration = videoInfo.basic_info.duration || 0
-      thumbnail = videoInfo.basic_info.thumbnail?.[0]?.url || null
-    } catch (metadataError) {
-      console.error('Metadata fetch error:', metadataError)
-      // Continue with default values - transcript is more important
-    }
+    // Fetch video metadata using oEmbed (lightweight, no filesystem access)
+    const { title, thumbnail } = await getVideoMetadata(videoId)
 
     // Store in database
     const source = await prisma.source.create({
