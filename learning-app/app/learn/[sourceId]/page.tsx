@@ -173,8 +173,8 @@ export default function LearningPage() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Video Area */}
-        <div className="flex-1 flex items-center justify-center bg-black relative group">
-          <div className="w-full h-full max-w-6xl max-h-[80vh] aspect-video shadow-2xl rounded-lg overflow-hidden border border-white/10 relative">
+        <div className="flex-1 min-w-0 flex items-center justify-center bg-black relative group p-4">
+          <div className="h-full max-w-full aspect-video shadow-2xl rounded-lg overflow-hidden border border-white/10 relative">
             <ReactPlayer
               src={source.url}
               width="100%"
@@ -234,7 +234,7 @@ export default function LearningPage() {
               animate={{ width: 350, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="h-full border-l border-border/40 bg-card/50 backdrop-blur-sm flex flex-col"
+              className="h-full border-l border-border/40 bg-card/50 backdrop-blur-sm flex flex-col flex-shrink-0"
             >
               <div className="p-4 border-b border-border/40 flex items-center justify-between">
                 <h2 className="font-semibold flex items-center gap-2">
