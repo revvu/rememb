@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import prisma from "@/lib/prisma";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || "",
 });
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
@@ -14,51 +15,85 @@ export async function POST() {
       );
     }
 
+    const { sourceId } = await request.json();
+
+    if (!sourceId) {
+      return NextResponse.json(
+        { error: "sourceId is required" },
+        { status: 400 }
+      );
+    }
+
+    // Fetch the source with transcript
+    const source = await prisma.source.findUnique({
+      where: { id: sourceId }
+    });
+
+    if (!source) {
+      return NextResponse.json(
+        { error: "Source not found" },
+        { status: 404 }
+      );
+    }
+
+    // Get a portion of the transcript (first ~5000 chars to stay within token limits)
+    const transcriptPortion = source.transcript.slice(0, 5000);
+
     const msg = await anthropic.messages.create({
-      model: "claude-3-opus-20240229",
-      max_tokens: 1024,
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2048,
       messages: [
         {
           role: "user",
-          content: `
-            You are an expert tutor in Deep Learning.
-            Generate 3 distinct challenge problems based on the topic "Neural Networks" (specifically: neurons, perceptrons, weights, biases, sigmoid activation).
-            
-            The problems should be of these types:
-            1. "concept": Test conceptual understanding.
-            2. "math": A mathematical derivation or calculation question.
-            3. "code": A small coding task (Python/Pseudocode).
+          content: `You are an expert educator who creates genuinely challenging problems that test deep understanding, not surface-level recall.
 
-            Output strictly valid JSON with this structure:
-            {
-              "problems": [
-                {
-                  "id": "p1",
-                  "type": "concept",
-                  "text": "...",
-                  "difficulty": "Medium"
-                },
-                {
-                  "id": "p2",
-                  "type": "math",
-                  "text": "...",
-                  "difficulty": "Hard"
-                },
-                {
-                  "id": "p3",
-                  "type": "code",
-                  "text": "...",
-                  "difficulty": "Medium"
-                }
-              ]
-            }
-            Do not include markdown formatting like \`\`\`json. Just the raw JSON string.
-          `,
+Based on the following video transcript titled "${source.title}", generate 3 challenging problems that:
+1. Require 5-15 minutes of thought to solve
+2. Test actual understanding, not memorization
+3. Make the learner think "oh, I didn't see it that way before"
+4. Are engaging and interesting to work on
+
+TRANSCRIPT:
+${transcriptPortion}
+
+Create 3 problems of these types:
+1. "construction" - Design/build something that satisfies constraints from the content
+2. "application" - Apply a concept to a novel, unexpected scenario
+3. "connection" - Connect ideas from the content to something broader or in a different domain
+
+Output strictly valid JSON with this structure:
+{
+  "problems": [
+    {
+      "id": "p1",
+      "type": "construction",
+      "text": "...",
+      "difficulty": "Medium"
+    },
+    {
+      "id": "p2",
+      "type": "application",
+      "text": "...",
+      "difficulty": "Hard"
+    },
+    {
+      "id": "p3",
+      "type": "connection",
+      "text": "...",
+      "difficulty": "Medium"
+    }
+  ]
+}
+
+IMPORTANT:
+- Problems must be specifically about the content in the transcript, not generic
+- Each problem should require genuine thinking and creativity
+- Do not include markdown formatting. Just the raw JSON string.`,
         },
       ],
     });
 
-    const text = (msg.content[0] as any).text;
+    const text = (msg.content[0] as { type: 'text'; text: string }).text;
     const firstBrace = text.indexOf("{");
     const lastBrace = text.lastIndexOf("}");
 
@@ -75,7 +110,6 @@ export async function POST() {
     if (error instanceof Anthropic.APIError) {
       console.error("Anthropic API Error Status:", error.status);
       console.error("Anthropic API Error Message:", error.message);
-      console.error("Anthropic API Error Details:", error.error);
     }
     return NextResponse.json(
       { error: "Failed to generate challenges", details: error instanceof Error ? error.message : String(error) },

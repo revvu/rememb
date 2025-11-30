@@ -1,30 +1,98 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, Play, BookOpen, Sparkles } from "lucide-react";
+import { ArrowRight, Play, Sparkles, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+interface Source {
+  id: string;
+  title: string;
+  url: string;
+  duration: number;
+  thumbnail: string | null;
+  createdAt: string;
+  sessions: { id: string; status: string }[];
+}
+
 export default function Home() {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [recentSources, setRecentSources] = useState<Source[]>([]);
+  const [isLoadingSources, setIsLoadingSources] = useState(true);
 
-  const handleStart = (e: React.FormEvent) => {
+  // Fetch recent sources on mount
+  useEffect(() => {
+    async function fetchSources() {
+      try {
+        const response = await fetch('/api/sources');
+        if (response.ok) {
+          const data = await response.json();
+          setRecentSources(data.sources || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch sources:', err);
+      } finally {
+        setIsLoadingSources(false);
+      }
+    }
+    fetchSources();
+  }, []);
+
+  const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) return;
 
     setIsLoading(true);
-    // Simulate processing delay for "wow" effect
-    setTimeout(() => {
-      // Mock ID for now
-      const mockId = "video-123";
-      router.push(`/learn/${mockId}`);
-    }, 1000);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/youtube/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to process video');
+      }
+
+      // Navigate to the learning page with the source ID
+      router.push(`/learn/${data.source.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      setIsLoading(false);
+    }
+  };
+
+  const formatDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
+  const formatTimeAgo = (dateString: string): string => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
   };
 
   return (
@@ -79,51 +147,87 @@ export default function Home() {
               className="border-none bg-transparent shadow-none focus-visible:ring-0 text-lg h-12 placeholder:text-muted-foreground/50"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              disabled={isLoading}
             />
             <Button
               size="lg"
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !url}
               className="h-12 px-8 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-medium transition-all duration-300 shadow-lg shadow-primary/25"
             >
               {isLoading ? (
-                <span className="flex items-center gap-2">Processing...</span>
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processing...
+                </span>
               ) : (
                 <span className="flex items-center gap-2">Start <ArrowRight className="w-4 h-4" /></span>
               )}
             </Button>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive flex items-center gap-2 text-sm"
+            >
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </motion.div>
+          )}
         </motion.form>
 
-        {/* Mock Recent Sessions */}
+        {/* Recent Sources */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.6, duration: 0.8 }}
           className="pt-16 w-full"
         >
-          <p className="text-sm text-muted-foreground mb-6 uppercase tracking-widest font-medium">Recent Sessions</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[
-              { title: "Neural Networks from Scratch", progress: 85, time: "2h 15m" },
-              { title: "The Riemann Hypothesis", progress: 30, time: "45m" }
-            ].map((session, i) => (
-              <Card key={i} className="glass-card p-4 hover:bg-white/5 transition-colors cursor-pointer group border-white/5">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                      <Play className="w-4 h-4 fill-current" />
+          <p className="text-sm text-muted-foreground mb-6 uppercase tracking-widest font-medium">
+            {isLoadingSources ? 'Loading...' : recentSources.length > 0 ? 'Recent Sessions' : 'No sessions yet'}
+          </p>
+
+          {recentSources.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {recentSources.slice(0, 4).map((source) => (
+                <Card
+                  key={source.id}
+                  className="glass-card p-4 hover:bg-white/5 transition-colors cursor-pointer group border-white/5"
+                  onClick={() => router.push(`/learn/${source.id}`)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      {source.thumbnail ? (
+                        <img
+                          src={source.thumbnail}
+                          alt={source.title}
+                          className="w-10 h-10 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+                          <Play className="w-4 h-4 fill-current" />
+                        </div>
+                      )}
+                      <div className="text-left">
+                        <h3 className="font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">
+                          {source.title}
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDuration(source.duration)} • {formatTimeAgo(source.createdAt)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <h3 className="font-medium text-foreground group-hover:text-primary transition-colors">{session.title}</h3>
-                      <p className="text-xs text-muted-foreground">Last active: {session.time} ago</p>
-                    </div>
+                    <Badge variant="secondary" className="bg-white/5 hover:bg-white/10">
+                      {source.sessions.length > 0 ? source.sessions[0].status : 'new'}
+                    </Badge>
                   </div>
-                  <Badge variant="secondary" className="bg-white/5 hover:bg-white/10">{session.progress}%</Badge>
-                </div>
-              </Card>
-            ))}
-          </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </motion.div>
       </motion.div>
     </div>

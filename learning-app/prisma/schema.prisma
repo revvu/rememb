@@ -1,0 +1,62 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Source {
+  id         String    @id @default(cuid())
+  title      String
+  url        String    @unique
+  videoId    String    @unique
+  transcript String    @db.Text
+  duration   Int       // seconds
+  thumbnail  String?
+  sessions   Session[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  sourceId  String
+  source    Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  startTime Int       // seconds into video
+  endTime   Int?      // null if still in progress
+  status    String    @default("watching") // watching, challenging, completed
+  problems  Problem[]
+  note      Note?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Problem {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  problemText String   @db.Text
+  problemType String   // construction, proof, optimization, application, connection, computational
+  difficulty  String   @default("medium") // easy, medium, hard
+  solution    String?  @db.Text
+  userAnswer  String?  @db.Text
+  isCorrect   Boolean?
+  feedback    String?  @db.Text
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  sessionId String   @unique
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

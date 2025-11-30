@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, CheckCircle, Brain, Sparkles, AlertCircle, ChevronRight } from "lucide-react";
+import { ArrowRight, CheckCircle, Brain, Sparkles, AlertCircle, ChevronRight, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,30 +17,55 @@ interface Problem {
   difficulty: string;
 }
 
+interface EvaluationResult {
+  isCorrect: boolean;
+  feedback: string;
+  nextStep?: string;
+}
+
 export default function ChallengePage() {
   const router = useRouter();
   const params = useParams();
-  const [step, setStep] = useState<"loading" | "problem" | "evaluating" | "feedback" | "complete">("loading");
+  const sourceId = params.sourceId as string;
+
+  const [step, setStep] = useState<"loading" | "problem" | "evaluating" | "feedback" | "complete" | "error">("loading");
   const [problems, setProblems] = useState<Problem[]>([]);
   const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
   const [answer, setAnswer] = useState("");
-  const [feedback, setFeedback] = useState("");
+  const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate fetching problems
     const fetchProblems = async () => {
       try {
-        const res = await fetch("/api/challenge/generate", { method: "POST" });
+        const res = await fetch("/api/challenge/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceId })
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || "Failed to generate challenges");
+        }
+
         const data = await res.json();
+        if (!data.problems || data.problems.length === 0) {
+          throw new Error("No problems were generated");
+        }
         setProblems(data.problems);
         setStep("problem");
-      } catch (error) {
-        console.error("Failed to load problems", error);
+      } catch (err) {
+        console.error("Failed to load problems", err);
+        setError(err instanceof Error ? err.message : "Failed to load problems");
+        setStep("error");
       }
     };
 
-    fetchProblems();
-  }, []);
+    if (sourceId) {
+      fetchProblems();
+    }
+  }, [sourceId]);
 
   const handleSubmit = async () => {
     if (!answer.trim()) return;
@@ -49,18 +74,28 @@ export default function ChallengePage() {
     try {
       const res = await fetch("/api/challenge/evaluate", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           answer,
           question: problems[currentProblemIndex].text
         }),
       });
+
+      if (!res.ok) {
+        throw new Error("Evaluation failed");
+      }
+
       const data = await res.json();
-      setFeedback(data.feedback);
-      // You might want to store isCorrect to change UI state, but for now we just show feedback
+      setEvaluation({
+        isCorrect: data.isCorrect,
+        feedback: data.feedback,
+        nextStep: data.nextStep
+      });
       setStep("feedback");
-    } catch (error) {
-      console.error("Evaluation failed", error);
-      setStep("problem"); // Retry
+    } catch (err) {
+      console.error("Evaluation failed", err);
+      setError("Failed to evaluate your answer. Please try again.");
+      setStep("problem");
     }
   };
 
@@ -68,14 +103,14 @@ export default function ChallengePage() {
     if (currentProblemIndex < problems.length - 1) {
       setCurrentProblemIndex((prev) => prev + 1);
       setAnswer("");
-      setFeedback("");
+      setEvaluation(null);
       setStep("problem");
     } else {
       setStep("complete");
     }
   };
 
-  const progressValue = ((currentProblemIndex + (step === "complete" ? 1 : 0)) / problems.length) * 100;
+  const progressValue = ((currentProblemIndex + (step === "complete" ? 1 : 0)) / Math.max(problems.length, 1)) * 100;
 
   return (
     <div className="min-h-screen w-full bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -94,12 +129,14 @@ export default function ChallengePage() {
               Challenge Phase
             </Badge>
           </div>
-          <div className="flex items-center gap-4 w-1/3">
-            <span className="text-xs text-muted-foreground font-mono">
-              {currentProblemIndex + 1} / {problems.length}
-            </span>
-            <Progress value={progressValue} className="h-2" />
-          </div>
+          {problems.length > 0 && (
+            <div className="flex items-center gap-4 w-1/3">
+              <span className="text-xs text-muted-foreground font-mono">
+                {currentProblemIndex + 1} / {problems.length}
+              </span>
+              <Progress value={progressValue} className="h-2" />
+            </div>
+          )}
         </div>
 
         <AnimatePresence mode="wait">
@@ -117,8 +154,34 @@ export default function ChallengePage() {
               </div>
               <h2 className="text-2xl font-semibold tracking-tight">Generating Challenges...</h2>
               <p className="text-muted-foreground text-center max-w-md">
-                Analyzing the content to create deep, insightful problems just for you.
+                Analyzing the transcript to create deep, insightful problems based on what you watched.
               </p>
+            </motion.div>
+          )}
+
+          {step === "error" && (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="flex flex-col items-center justify-center space-y-6 py-20"
+            >
+              <div className="p-4 rounded-full bg-destructive/20">
+                <AlertCircle className="w-12 h-12 text-destructive" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight">Something went wrong</h2>
+              <p className="text-muted-foreground text-center max-w-md">
+                {error}
+              </p>
+              <div className="flex gap-4">
+                <Button variant="outline" onClick={() => router.push(`/learn/${sourceId}`)}>
+                  Back to Video
+                </Button>
+                <Button onClick={() => window.location.reload()}>
+                  Try Again
+                </Button>
+              </div>
             </motion.div>
           )}
 
@@ -144,7 +207,7 @@ export default function ChallengePage() {
 
                 <div className="space-y-4">
                   <Textarea
-                    placeholder="Type your answer here..."
+                    placeholder="Type your answer here... Take your time to think deeply about this problem."
                     className="min-h-[200px] bg-black/20 border-white/10 focus:border-primary/50 text-lg resize-none p-4"
                     value={answer}
                     onChange={(e) => setAnswer(e.target.value)}
@@ -172,12 +235,12 @@ export default function ChallengePage() {
               exit={{ opacity: 0 }}
               className="flex flex-col items-center justify-center py-20 space-y-4"
             >
-              <Sparkles className="w-12 h-12 text-primary animate-spin-slow" />
+              <Sparkles className="w-12 h-12 text-primary animate-spin" />
               <p className="text-lg font-medium">Analyzing your reasoning...</p>
             </motion.div>
           )}
 
-          {step === "feedback" && (
+          {step === "feedback" && evaluation && (
             <motion.div
               key="feedback"
               initial={{ opacity: 0, y: 20 }}
@@ -185,29 +248,63 @@ export default function ChallengePage() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-6"
             >
-              <Card className="glass-card p-8 border-green-500/20 bg-green-500/5 shadow-2xl">
+              <Card className={`glass-card p-8 shadow-2xl ${
+                evaluation.isCorrect
+                  ? "border-green-500/20 bg-green-500/5"
+                  : "border-yellow-500/20 bg-yellow-500/5"
+              }`}>
                 <div className="flex items-start gap-4">
-                  <div className="p-3 rounded-full bg-green-500/20 text-green-500 mt-1">
-                    <CheckCircle className="w-6 h-6" />
+                  <div className={`p-3 rounded-full mt-1 ${
+                    evaluation.isCorrect
+                      ? "bg-green-500/20 text-green-500"
+                      : "bg-yellow-500/20 text-yellow-500"
+                  }`}>
+                    {evaluation.isCorrect ? (
+                      <CheckCircle className="w-6 h-6" />
+                    ) : (
+                      <AlertCircle className="w-6 h-6" />
+                    )}
                   </div>
                   <div className="space-y-4 flex-1">
-                    <h3 className="text-xl font-semibold text-green-500">Correct Approach!</h3>
-                    <p className="text-foreground/90 leading-relaxed">
-                      {feedback}
+                    <h3 className={`text-xl font-semibold ${
+                      evaluation.isCorrect ? "text-green-500" : "text-yellow-500"
+                    }`}>
+                      {evaluation.isCorrect ? "Great thinking!" : "Good effort, but let's dig deeper"}
+                    </h3>
+                    <p className="text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                      {evaluation.feedback}
                     </p>
+                    {evaluation.nextStep && (
+                      <div className="mt-4 p-4 rounded-lg bg-primary/10 border border-primary/20">
+                        <h4 className="text-sm font-semibold text-primary mb-2">Next Step:</h4>
+                        <p className="text-sm text-muted-foreground">{evaluation.nextStep}</p>
+                      </div>
+                    )}
                     <div className="pt-4 flex justify-end">
-                      <Button onClick={handleNext} size="lg" variant="outline" className="border-green-500/30 hover:bg-green-500/10 hover:text-green-500">
-                        Next Challenge <ChevronRight className="w-4 h-4 ml-2" />
+                      <Button
+                        onClick={handleNext}
+                        size="lg"
+                        variant="outline"
+                        className={
+                          evaluation.isCorrect
+                            ? "border-green-500/30 hover:bg-green-500/10 hover:text-green-500"
+                            : "border-yellow-500/30 hover:bg-yellow-500/10 hover:text-yellow-500"
+                        }
+                      >
+                        {currentProblemIndex < problems.length - 1 ? (
+                          <>Next Challenge <ChevronRight className="w-4 h-4 ml-2" /></>
+                        ) : (
+                          <>Complete Session <CheckCircle className="w-4 h-4 ml-2" /></>
+                        )}
                       </Button>
                     </div>
                   </div>
                 </div>
               </Card>
 
-              <div className="opacity-50 pointer-events-none grayscale blur-[1px]">
-                {/* Show previous problem context faintly */}
-                <h4 className="text-sm font-medium text-muted-foreground mb-2">Problem Context:</h4>
-                <p className="text-muted-foreground">{problems[currentProblemIndex].text}</p>
+              <div className="opacity-50 pointer-events-none">
+                <h4 className="text-sm font-medium text-muted-foreground mb-2">Your Answer:</h4>
+                <p className="text-muted-foreground text-sm line-clamp-3">{answer}</p>
               </div>
             </motion.div>
           )}
@@ -224,14 +321,14 @@ export default function ChallengePage() {
               </div>
               <h2 className="text-4xl font-bold">Session Complete!</h2>
               <p className="text-xl text-muted-foreground max-w-xl mx-auto">
-                You've successfully tackled the core concepts. We've generated a comprehensive set of notes based on your answers.
+                You've successfully tackled all the challenges. Great job engaging deeply with the content!
               </p>
               <div className="flex justify-center gap-4">
                 <Button size="lg" variant="outline" onClick={() => router.push("/")}>
                   Return Home
                 </Button>
-                <Button size="lg" onClick={() => router.push(`/learn/${(params as any).sourceId}`)}>
-                  View Notes <ArrowRight className="w-4 h-4 ml-2" />
+                <Button size="lg" onClick={() => router.push(`/learn/${sourceId}`)}>
+                  Back to Video <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </div>
             </motion.div>
