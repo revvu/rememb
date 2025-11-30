@@ -39,6 +39,8 @@ export default function LearningPage() {
   const [progress, setProgress] = useState(0);
   const [readyForChallenge, setReadyForChallenge] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [playerReady, setPlayerReady] = useState(false);
+  const [playerError, setPlayerError] = useState<string | null>(null);
 
   // Fetch source data
   useEffect(() => {
@@ -172,13 +174,18 @@ export default function LearningPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Video Area */}
         <div className="flex-1 flex items-center justify-center bg-black relative group">
-          <div className="w-full h-full max-w-6xl max-h-[80vh] aspect-video shadow-2xl rounded-lg overflow-hidden border border-white/10">
+          <div className="w-full h-full max-w-6xl max-h-[80vh] aspect-video shadow-2xl rounded-lg overflow-hidden border border-white/10 relative">
             <ReactPlayer
-              url={source.url}
+              src={source.url}
               width="100%"
               height="100%"
               playing={isPlaying}
               controls
+              onReady={() => setPlayerReady(true)}
+              onError={(e: Error) => {
+                console.error('Player error:', e);
+                setPlayerError('Failed to load video. Please try again.');
+              }}
               onProgress={(state: { played: number; playedSeconds: number }) => {
                 setProgress(state.played * 100);
                 setCurrentTime(state.playedSeconds);
@@ -187,10 +194,32 @@ export default function LearningPage() {
               onPause={() => setIsPlaying(false)}
               config={{
                 youtube: {
-                  playerVars: { showinfo: 0, modestbranding: 1 }
+                  playerVars: {
+                    showinfo: 0,
+                    modestbranding: 1,
+                    origin: typeof window !== 'undefined' ? window.location.origin : ''
+                  }
                 }
               }}
             />
+            {/* Loading state */}
+            {!playerReady && !playerError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+                <Loader2 className="w-8 h-8 animate-spin text-white" />
+              </div>
+            )}
+            {/* Error state */}
+            {playerError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black text-white z-10">
+                <div className="text-center">
+                  <AlertCircle className="w-12 h-12 mx-auto mb-4 text-destructive" />
+                  <p className="mb-4">{playerError}</p>
+                  <Button onClick={() => { setPlayerError(null); setPlayerReady(false); }}>
+                    Retry
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Ambient Glow */}
