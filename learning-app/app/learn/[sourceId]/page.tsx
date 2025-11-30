@@ -6,7 +6,8 @@ import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Dynamic import to avoid SSR issues with ReactPlayer
-const ReactPlayer = dynamic(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ReactPlayer = dynamic<any>(
   () => import("react-player").then((mod) => mod.default),
   { ssr: false, loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-white">Loading player...</div> }
 );
@@ -178,7 +179,7 @@ export default function LearningPage() {
               height="100%"
               playing={isPlaying}
               controls
-              onProgress={(state) => {
+              onProgress={(state: { played: number; playedSeconds: number }) => {
                 setProgress(state.played * 100);
                 setCurrentTime(state.playedSeconds);
               }}
