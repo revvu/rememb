@@ -131,7 +131,7 @@ export default function ChallengePage() {
           </div>
           {problems.length > 0 && (
             <div className="flex items-center gap-4 w-1/3">
-              <span className="text-xs text-muted-foreground font-mono">
+              <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">
                 {currentProblemIndex + 1} / {problems.length}
               </span>
               <Progress value={progressValue} className="h-2" />

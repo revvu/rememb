@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { AI_CONFIG } from "@/lib/ai-config";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || "",
@@ -23,30 +24,15 @@ export async function POST(req: Request) {
       );
     }
 
+    const config = AI_CONFIG.answerEvaluation;
+
     const msg = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
+      model: config.model,
+      max_tokens: config.maxTokens,
       messages: [
         {
           role: "user",
-          content: `
-            You are an expert tutor. Evaluate the student's answer to the following question.
-            
-            Question: "${question}"
-            Student Answer: "${answer}"
-
-            Determine if the answer is correct or demonstrates a good understanding. 
-            Provide constructive feedback. If incorrect, explain why without giving the full answer immediately if possible, or guide them.
-            Suggest a brief "next step" or follow-up thought.
-
-            Output strictly valid JSON with this structure:
-            {
-              "isCorrect": boolean,
-              "feedback": "string",
-              "nextStep": "string"
-            }
-            Do not include markdown formatting like \`\`\`json. Just the raw JSON string.
-          `,
+          content: config.prompt(question, answer),
         },
       ],
     });

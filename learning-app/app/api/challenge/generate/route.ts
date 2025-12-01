@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import prisma from "@/lib/prisma";
+import { AI_CONFIG } from "@/lib/ai-config";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || "",
@@ -38,57 +39,15 @@ export async function POST(request: NextRequest) {
 
     // Get a portion of the transcript (first ~5000 chars to stay within token limits)
     const transcriptPortion = source.transcript.slice(0, 5000);
+    const config = AI_CONFIG.challengeGeneration;
 
     const msg = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 2048,
+      model: config.model,
+      max_tokens: config.maxTokens,
       messages: [
         {
           role: "user",
-          content: `You are an expert educator who creates genuinely challenging problems that test deep understanding, not surface-level recall.
-
-Based on the following video transcript titled "${source.title}", generate 3 challenging problems that:
-1. Require 5-15 minutes of thought to solve
-2. Test actual understanding, not memorization
-3. Make the learner think "oh, I didn't see it that way before"
-4. Are engaging and interesting to work on
-
-TRANSCRIPT:
-${transcriptPortion}
-
-Create 3 problems of these types:
-1. "construction" - Design/build something that satisfies constraints from the content
-2. "application" - Apply a concept to a novel, unexpected scenario
-3. "connection" - Connect ideas from the content to something broader or in a different domain
-
-Output strictly valid JSON with this structure:
-{
-  "problems": [
-    {
-      "id": "p1",
-      "type": "construction",
-      "text": "...",
-      "difficulty": "Medium"
-    },
-    {
-      "id": "p2",
-      "type": "application",
-      "text": "...",
-      "difficulty": "Hard"
-    },
-    {
-      "id": "p3",
-      "type": "connection",
-      "text": "...",
-      "difficulty": "Medium"
-    }
-  ]
-}
-
-IMPORTANT:
-- Problems must be specifically about the content in the transcript, not generic
-- Each problem should require genuine thinking and creativity
-- Do not include markdown formatting. Just the raw JSON string.`,
+          content: config.prompt(source.title, transcriptPortion),
         },
       ],
     });

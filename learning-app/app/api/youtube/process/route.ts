@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import prisma from '@/lib/prisma'
+import { AI_CONFIG } from '@/lib/ai-config'
 
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url: string): string | null {
@@ -89,28 +90,15 @@ function estimateDuration(segments: { start: number; duration: number }[]): numb
 // Analyze transcript with Claude to find natural breakpoints
 async function analyzeBreakpoints(transcript: string, duration: number): Promise<{ timestamp: number; reason: string }[]> {
   try {
+    const config = AI_CONFIG.breakpointAnalysis
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2000,
+      model: config.model,
+      max_tokens: config.maxTokens,
       messages: [{
         role: 'user',
-        content: `Analyze this video transcript and identify natural breakpoints where it would be good to pause and test understanding. Look for:
-- Topic transitions ("Now let's move on to...", "In the next section...")
-- Completion of a concept or idea
-- End of worked examples
-- Natural pauses before new material
-
-Video duration: ${duration} seconds
-
-Transcript:
-${transcript.slice(0, 15000)}
-
-Return ONLY a JSON array of breakpoints, no other text:
-[{ "timestamp": <seconds>, "reason": "<brief reason>" }]
-
-Aim for breakpoints roughly every 10-15 minutes for long videos, but prioritize natural transitions over arbitrary time intervals. For short videos (<10 min), identify 1-2 key breakpoints. Always include at least one breakpoint.`
+        content: config.prompt(transcript, duration)
       }]
     })
 
