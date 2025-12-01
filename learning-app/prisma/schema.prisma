@@ -11,16 +11,17 @@ datasource db {
 }
 
 model Source {
-  id         String    @id @default(cuid())
-  title      String
-  url        String    @unique
-  videoId    String    @unique
-  transcript String    @db.Text
-  duration   Int       // seconds
-  thumbnail  String?
-  sessions   Session[]
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id          String    @id @default(cuid())
+  title       String
+  url         String    @unique
+  videoId     String    @unique
+  transcript  String    @db.Text
+  duration    Int       // seconds
+  thumbnail   String?
+  breakpoints String?   @db.Text  // JSON array of { timestamp: number, reason: string }
+  sessions    Session[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model Session {

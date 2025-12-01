@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 
 interface Source {
   id: string;
@@ -26,6 +25,12 @@ interface Source {
   transcript: string;
   duration: number;
   thumbnail: string | null;
+  breakpoints: string | null;
+}
+
+interface Breakpoint {
+  timestamp: number;
+  reason: string;
 }
 
 export default function LearningPage() {
@@ -41,6 +46,7 @@ export default function LearningPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [playerReady, setPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [currentBreakpoint, setCurrentBreakpoint] = useState<Breakpoint | null>(null);
 
   // Fetch source data
   useEffect(() => {
@@ -64,12 +70,28 @@ export default function LearningPage() {
     }
   }, [params.sourceId]);
 
-  // Enable challenge button after watching for a bit (or 10% progress)
+  // Parse breakpoints from source
+  const breakpoints: Breakpoint[] = source?.breakpoints
+    ? JSON.parse(source.breakpoints)
+    : [];
+
+  // Enable challenge button when user reaches a breakpoint
   useEffect(() => {
-    if (progress >= 10 || currentTime >= 60) {
-      setReadyForChallenge(true);
+    if (breakpoints.length === 0) {
+      // Fallback: enable after 10% or 60 seconds if no breakpoints
+      if (progress >= 10 || currentTime >= 60) {
+        setReadyForChallenge(true);
+      }
+      return;
     }
-  }, [progress, currentTime]);
+
+    // Find the first breakpoint we've passed
+    const passedBreakpoint = breakpoints.find(bp => currentTime >= bp.timestamp);
+    if (passedBreakpoint && !readyForChallenge) {
+      setReadyForChallenge(true);
+      setCurrentBreakpoint(passedBreakpoint);
+    }
+  }, [currentTime, breakpoints.length, progress, readyForChallenge]);
 
   // Parse transcript into timeline notes
   const parseTranscriptNotes = (transcript: string) => {
@@ -134,6 +156,17 @@ export default function LearningPage() {
   const notes = parseTranscriptNotes(source.transcript);
   const keyConcepts = extractKeyConcepts(source.transcript);
 
+  // Calculate next breakpoint and time remaining
+  const nextUpcomingBreakpoint = breakpoints.find(bp => currentTime < bp.timestamp);
+  const timeToNext = nextUpcomingBreakpoint ? nextUpcomingBreakpoint.timestamp - currentTime : null;
+
+  // Format seconds as M:SS
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // Debug logging
   console.log('Video URL:', source.url);
 
@@ -150,9 +183,36 @@ export default function LearningPage() {
           </h1>
         </div>
         <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground mr-2">
-            <Progress value={progress} className="w-24 h-2" />
+          <div className="hidden md:flex items-center gap-3 text-xs text-muted-foreground mr-2">
+            {/* Custom progress bar with breakpoint markers */}
+            <div className="relative w-32 h-2 bg-secondary rounded-full overflow-visible">
+              {/* Progress fill */}
+              <div
+                className="absolute inset-y-0 left-0 bg-primary rounded-full transition-all"
+                style={{ width: `${progress}%` }}
+              />
+              {/* Breakpoint markers */}
+              {breakpoints.map((bp, i) => {
+                const position = (bp.timestamp / source.duration) * 100;
+                const isPassed = currentTime >= bp.timestamp;
+                return (
+                  <div
+                    key={i}
+                    className={`absolute top-1/2 w-2.5 h-2.5 rounded-full border-2 border-background ${
+                      isPassed ? 'bg-primary' : 'bg-muted-foreground'
+                    }`}
+                    style={{ left: `${position}%`, transform: 'translate(-50%, -50%)' }}
+                    title={bp.reason}
+                  />
+                );
+              })}
+            </div>
             <span>{Math.round(progress)}%</span>
+            {timeToNext !== null && timeToNext > 0 && (
+              <span className="text-primary font-medium">
+                Challenge in {formatTime(timeToNext)}
+              </span>
+            )}
           </div>
           <Button
             variant={readyForChallenge ? "default" : "secondary"}
@@ -181,16 +241,24 @@ export default function LearningPage() {
               height="100%"
               playing={isPlaying}
               controls
-              onReady={() => setPlayerReady(true)}
+              progressInterval={1000}
+              onReady={() => {
+                console.log('Player ready');
+                setPlayerReady(true);
+              }}
               onError={(e: Error) => {
                 console.error('Player error:', e);
                 setPlayerError('Failed to load video. Please try again.');
               }}
-              onProgress={(state: { played: number; playedSeconds: number }) => {
+              onProgress={(state: { played: number; playedSeconds: number; loaded: number }) => {
+                console.log('Progress:', state);
                 setProgress((state.played ?? 0) * 100);
                 setCurrentTime(state.playedSeconds ?? 0);
               }}
-              onPlay={() => setIsPlaying(true)}
+              onPlay={() => {
+                console.log('Play event');
+                setIsPlaying(true);
+              }}
               onPause={() => setIsPlaying(false)}
               config={{
                 youtube: {
@@ -257,6 +325,30 @@ export default function LearningPage() {
                     </div>
                   </div>
 
+                  {breakpoints.length > 0 && (
+                    <>
+                      <Separator className="bg-border/50" />
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Challenge Points</h3>
+                        {breakpoints.map((bp, i) => {
+                          const isPassed = currentTime >= bp.timestamp;
+                          return (
+                            <div
+                              key={i}
+                              className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
+                                isPassed ? 'bg-primary/10' : 'hover:bg-white/5'
+                              }`}
+                            >
+                              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isPassed ? 'bg-primary' : 'bg-muted-foreground'}`} />
+                              <span className="text-xs font-mono text-primary flex-shrink-0">{formatTime(bp.timestamp)}</span>
+                              <span className="text-sm text-foreground/80 line-clamp-1">{bp.reason}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
                   <Separator className="bg-border/50" />
 
                   <div className="space-y-4">
@@ -276,7 +368,9 @@ export default function LearningPage() {
                     </h4>
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {readyForChallenge
-                        ? "Great progress! Click 'Start Challenge' to test your understanding with AI-generated problems."
+                        ? currentBreakpoint
+                          ? `Good stopping point: ${currentBreakpoint.reason}. Click 'Start Challenge' to test your understanding.`
+                          : "Great progress! Click 'Start Challenge' to test your understanding with AI-generated problems."
                         : "Watch a bit more of the video to unlock challenges."}
                     </p>
                   </div>

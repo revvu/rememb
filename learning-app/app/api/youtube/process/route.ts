@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import Anthropic from '@anthropic-ai/sdk'
 import prisma from '@/lib/prisma'
 
 // Extract video ID from various YouTube URL formats
@@ -85,6 +86,44 @@ function estimateDuration(segments: { start: number; duration: number }[]): numb
   return Math.ceil(lastSegment.start + lastSegment.duration)
 }
 
+// Analyze transcript with Claude to find natural breakpoints
+async function analyzeBreakpoints(transcript: string, duration: number): Promise<{ timestamp: number; reason: string }[]> {
+  try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: `Analyze this video transcript and identify natural breakpoints where it would be good to pause and test understanding. Look for:
+- Topic transitions ("Now let's move on to...", "In the next section...")
+- Completion of a concept or idea
+- End of worked examples
+- Natural pauses before new material
+
+Video duration: ${duration} seconds
+
+Transcript:
+${transcript.slice(0, 15000)}
+
+Return ONLY a JSON array of breakpoints, no other text:
+[{ "timestamp": <seconds>, "reason": "<brief reason>" }]
+
+Aim for breakpoints roughly every 10-15 minutes for long videos, but prioritize natural transitions over arbitrary time intervals. For short videos (<10 min), identify 1-2 key breakpoints. Always include at least one breakpoint.`
+      }]
+    })
+
+    // Parse JSON from response
+    const text = response.content[0].type === 'text' ? response.content[0].text : ''
+    const jsonMatch = text.match(/\[[\s\S]*\]/)
+    return jsonMatch ? JSON.parse(jsonMatch[0]) : []
+  } catch (error) {
+    console.error('Breakpoint analysis error:', error)
+    return [] // Return empty array on failure, frontend will use fallback logic
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json()
@@ -133,6 +172,9 @@ export async function POST(request: NextRequest) {
     // Fetch video metadata using oEmbed (lightweight, no filesystem access)
     const { title, thumbnail } = await getVideoMetadata(videoId)
 
+    // Analyze transcript for natural breakpoints
+    const breakpoints = await analyzeBreakpoints(transcript, duration)
+
     // Store in database
     const source = await prisma.source.create({
       data: {
@@ -141,7 +183,8 @@ export async function POST(request: NextRequest) {
         videoId,
         transcript,
         duration,
-        thumbnail
+        thumbnail,
+        breakpoints: JSON.stringify(breakpoints)
       }
     })
 
