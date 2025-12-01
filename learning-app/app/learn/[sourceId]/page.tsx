@@ -187,8 +187,8 @@ export default function LearningPage() {
                 setPlayerError('Failed to load video. Please try again.');
               }}
               onProgress={(state: { played: number; playedSeconds: number }) => {
-                setProgress(state.played * 100);
-                setCurrentTime(state.playedSeconds);
+                setProgress((state.played ?? 0) * 100);
+                setCurrentTime(state.playedSeconds ?? 0);
               }}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
