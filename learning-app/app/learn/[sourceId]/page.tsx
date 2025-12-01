@@ -241,7 +241,6 @@ export default function LearningPage() {
               height="100%"
               playing={isPlaying}
               controls
-              progressInterval={1000}
               onReady={() => {
                 console.log('Player ready');
                 setPlayerReady(true);
@@ -250,10 +249,14 @@ export default function LearningPage() {
                 console.error('Player error:', e);
                 setPlayerError('Failed to load video. Please try again.');
               }}
-              onProgress={(state: { played: number; playedSeconds: number; loaded: number }) => {
-                console.log('Progress:', state);
-                setProgress((state.played ?? 0) * 100);
-                setCurrentTime(state.playedSeconds ?? 0);
+              onTimeUpdate={(e: React.SyntheticEvent<HTMLVideoElement>) => {
+                const target = e.target as HTMLVideoElement;
+                const currentTime = target.currentTime;
+                const duration = target.duration || source.duration;
+                const played = duration > 0 ? currentTime / duration : 0;
+                console.log('TimeUpdate:', { currentTime, duration, played });
+                setProgress(played * 100);
+                setCurrentTime(currentTime);
               }}
               onPlay={() => {
                 console.log('Play event');
