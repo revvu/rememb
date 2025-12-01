@@ -92,7 +92,7 @@ async function analyzeBreakpoints(transcript: string, duration: number): Promise
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 2000,
       messages: [{
         role: 'user',
