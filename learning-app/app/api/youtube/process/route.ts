@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { YoutubeTranscript } from 'youtube-transcript'
 import prisma from '@/lib/prisma'
 
 // Extract video ID from various YouTube URL formats
@@ -17,12 +16,38 @@ function extractVideoId(url: string): string | null {
   return null
 }
 
+// Fetch transcript from TranscriptAPI.com
+async function fetchTranscript(videoId: string): Promise<{ text: string; start: number; duration: number }[]> {
+  const response = await fetch(
+    `https://transcriptapi.com/api/v2/youtube/transcript?video_url=${videoId}&include_timestamp=true`,
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.TRANSCRIPT_API_KEY}`
+      }
+    }
+  )
+
+  if (!response.ok) {
+    const status = response.status
+    if (status === 404) {
+      throw new Error('Video not found or no transcript available')
+    } else if (status === 429) {
+      throw new Error('Too many requests, please try again')
+    } else {
+      throw new Error('Failed to fetch transcript')
+    }
+  }
+
+  const data = await response.json()
+  return data.transcript
+}
+
 // Format transcript segments into readable text with timestamps
-function formatTranscript(segments: { text: string; offset: number; duration: number }[]): string {
+function formatTranscript(segments: { text: string; start: number; duration: number }[]): string {
   return segments
     .map(segment => {
-      const minutes = Math.floor(segment.offset / 60000)
-      const seconds = Math.floor((segment.offset % 60000) / 1000)
+      const minutes = Math.floor(segment.start / 60)
+      const seconds = Math.floor(segment.start % 60)
       const timestamp = `[${minutes}:${seconds.toString().padStart(2, '0')}]`
       return `${timestamp} ${segment.text}`
     })
@@ -53,11 +78,11 @@ async function getVideoMetadata(videoId: string): Promise<{ title: string; thumb
   }
 }
 
-// Estimate duration from transcript (last segment offset + duration)
-function estimateDuration(segments: { offset: number; duration: number }[]): number {
+// Estimate duration from transcript (last segment start + duration)
+function estimateDuration(segments: { start: number; duration: number }[]): number {
   if (segments.length === 0) return 0
   const lastSegment = segments[segments.length - 1]
-  return Math.ceil((lastSegment.offset + lastSegment.duration) / 1000) // Convert ms to seconds
+  return Math.ceil(lastSegment.start + lastSegment.duration)
 }
 
 export async function POST(request: NextRequest) {
@@ -93,13 +118,14 @@ export async function POST(request: NextRequest) {
     let transcript: string
     let duration = 0
     try {
-      const transcriptSegments = await YoutubeTranscript.fetchTranscript(videoId)
+      const transcriptSegments = await fetchTranscript(videoId)
       transcript = formatTranscript(transcriptSegments)
       duration = estimateDuration(transcriptSegments)
     } catch (transcriptError) {
       console.error('Transcript fetch error:', transcriptError)
+      const errorMessage = transcriptError instanceof Error ? transcriptError.message : 'Could not fetch transcript'
       return NextResponse.json(
-        { error: 'Could not fetch transcript. The video may not have captions available.' },
+        { error: errorMessage },
         { status: 400 }
       )
     }
