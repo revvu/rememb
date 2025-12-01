@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Deep Learning System
 
-## Getting Started
+Transform passive YouTube watching into active learning with AI-generated challenges.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Transcript Extraction** - Automatically fetches YouTube video transcripts with timestamps
+- **Smart Notes** - Auto-generated key concepts and timeline from transcript
+- **AI Challenges** - Claude generates thought-provoking problems based on video content
+- **Intelligent Feedback** - AI evaluates your answers and provides detailed feedback
+- **Progress Tracking** - Track your learning sessions and video progress
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Framework**: Next.js 16 with React 19
+- **AI**: Anthropic Claude (claude-sonnet-4-20250514)
+- **Database**: PostgreSQL via Prisma ORM
+- **Styling**: Tailwind CSS + Framer Motion
+- **Video**: react-player
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Prerequisites
 
-## Learn More
+You'll need API keys for:
 
-To learn more about Next.js, take a look at the following resources:
+| Service | Purpose | Get it at |
+|---------|---------|-----------|
+| Anthropic | AI challenge generation & evaluation | [console.anthropic.com](https://console.anthropic.com) |
+| TranscriptAPI | YouTube transcript fetching | [transcriptapi.com](https://transcriptapi.com) |
+| PostgreSQL | Data storage (Supabase recommended) | [supabase.com](https://supabase.com) |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Setup
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. **Clone and install**
+   ```bash
+   git clone <repo-url>
+   cd learning-app
+   npm install
+   ```
 
-## Deploy on Vercel
+2. **Configure environment**
+   ```bash
+   cp .env.example .env
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   Fill in your `.env`:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-...
+   TRANSCRIPT_API_KEY=sk_...
+   DATABASE_URL="postgresql://..."
+   DATABASE_URL_POOLED="postgresql://..."
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. **Initialize database**
+   ```bash
+   npx prisma db push
+   ```
+
+4. **Run development server**
+   ```bash
+   npm run dev
+   ```
+
+   Open [http://localhost:3000](http://localhost:3000)
+
+## Usage
+
+1. Paste a YouTube URL on the home page
+2. Watch the video with smart notes in the sidebar
+3. After watching ~10%, click "Start Challenge"
+4. Answer AI-generated questions about the content
+5. Receive feedback and improve your understanding
+
+## Deployment
+
+Deploy to Vercel and add the environment variables in your project settings.
