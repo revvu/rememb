@@ -48,14 +48,20 @@ export default function LearningPage() {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [currentBreakpoint, setCurrentBreakpoint] = useState<Breakpoint | null>(null);
 
-  // Fetch source data
+  // Fetch source data with retry logic for database consistency
   useEffect(() => {
+    async function fetchWithRetry(url: string, retries = 3, delay = 500): Promise<Response> {
+      for (let i = 0; i < retries; i++) {
+        const response = await fetch(url);
+        if (response.ok) return response;
+        if (i < retries - 1) await new Promise(r => setTimeout(r, delay * (i + 1)));
+      }
+      throw new Error('Source not found');
+    }
+
     async function fetchSource() {
       try {
-        const response = await fetch(`/api/sources/${params.sourceId}`);
-        if (!response.ok) {
-          throw new Error('Source not found');
-        }
+        const response = await fetchWithRetry(`/api/sources/${params.sourceId}`);
         const data = await response.json();
         setSource(data.source);
       } catch (err) {
