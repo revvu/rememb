@@ -115,7 +115,7 @@ export default function Home() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2, duration: 0.5 }}
           >
-            <Badge variant="outline" className="px-4 py-1.5 rounded-full border-primary/30 bg-primary/10 text-primary-foreground text-sm backdrop-blur-md">
+            <Badge variant="outline" className="px-4 py-1.5 rounded-full border-primary/30 bg-primary/10 text-foreground text-sm backdrop-blur-md">
               <Sparkles className="w-3 h-3 mr-2 inline-block" />
               Deep Learning System v1.0
             </Badge>
