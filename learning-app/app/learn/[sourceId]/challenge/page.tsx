@@ -1,21 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, CheckCircle, Brain, Sparkles, AlertCircle, ChevronRight, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle, Brain, Sparkles, AlertCircle, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-
-interface Problem {
-  id: string;
-  type: string;
-  text: string;
-  difficulty: string;
-}
+import {
+  QuestionRenderer,
+  Problem,
+  formatAnswerForSubmission,
+  isAnswerValid,
+} from "@/components/questions/QuestionRenderer";
 
 interface EvaluationResult {
   isCorrect: boolean;
@@ -23,25 +21,53 @@ interface EvaluationResult {
   nextStep?: string;
 }
 
+type AnswerType = string | number | number[] | boolean | Record<number, number>;
+
 export default function ChallengePage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const sourceId = params.sourceId as string;
+  const sessionId = searchParams.get("sessionId");
 
   const [step, setStep] = useState<"loading" | "problem" | "evaluating" | "feedback" | "complete" | "error">("loading");
   const [problems, setProblems] = useState<Problem[]>([]);
   const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState<AnswerType>("");
   const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Initialize answer based on problem type
+  const initializeAnswer = (problem: Problem): AnswerType => {
+    switch (problem.type) {
+      case "multiple_choice":
+        return -1; // No selection
+      case "multi_select":
+        return []; // No selections
+      case "true_false":
+        return "" as unknown as boolean; // Unset
+      case "matching":
+        return {}; // No matches
+      case "ordering":
+        return problem.options?.map((_, i) => i) || []; // Initial order
+      default:
+        return ""; // Text input
+    }
+  };
+
   useEffect(() => {
     const fetchProblems = async () => {
+      if (!sessionId) {
+        setError("No session ID provided");
+        setStep("error");
+        return;
+      }
+
       try {
         const res = await fetch("/api/challenge/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceId })
+          body: JSON.stringify({ sessionId })
         });
 
         if (!res.ok) {
@@ -54,6 +80,8 @@ export default function ChallengePage() {
           throw new Error("No problems were generated");
         }
         setProblems(data.problems);
+        // Initialize answer for first problem
+        setAnswer(initializeAnswer(data.problems[0]));
         setStep("problem");
       } catch (err) {
         console.error("Failed to load problems", err);
@@ -62,22 +90,31 @@ export default function ChallengePage() {
       }
     };
 
-    if (sourceId) {
+    if (sessionId) {
       fetchProblems();
     }
-  }, [sourceId]);
+  }, [sessionId]);
 
   const handleSubmit = async () => {
-    if (!answer.trim()) return;
+    const currentProblem = problems[currentProblemIndex];
+    if (!isAnswerValid(currentProblem, answer)) return;
+
     setStep("evaluating");
 
     try {
+      // Format answer for the API
+      const formattedAnswer = formatAnswerForSubmission(currentProblem, answer);
+
       const res = await fetch("/api/challenge/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          answer,
-          question: problems[currentProblemIndex].text
+          problemId: currentProblem.id,
+          question: currentProblem.text,
+          answer: formattedAnswer,
+          problemType: currentProblem.type,
+          options: currentProblem.options,
+          correctAnswer: currentProblem.correctAnswer
         }),
       });
 
@@ -99,13 +136,26 @@ export default function ChallengePage() {
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentProblemIndex < problems.length - 1) {
-      setCurrentProblemIndex((prev) => prev + 1);
-      setAnswer("");
+      const nextIndex = currentProblemIndex + 1;
+      setCurrentProblemIndex(nextIndex);
+      setAnswer(initializeAnswer(problems[nextIndex]));
       setEvaluation(null);
       setStep("problem");
     } else {
+      // Mark session as completed
+      if (sessionId) {
+        try {
+          await fetch("/api/sessions", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId, status: "completed" })
+          });
+        } catch (err) {
+          console.error("Failed to update session status:", err);
+        }
+      }
       setStep("complete");
     }
   };
@@ -206,17 +256,16 @@ export default function ChallengePage() {
                 </div>
 
                 <div className="space-y-4">
-                  <Textarea
-                    placeholder="Type your answer here... Take your time to think deeply about this problem."
-                    className="min-h-[200px] bg-black/20 border-white/10 focus:border-primary/50 text-lg resize-none p-4"
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
+                  <QuestionRenderer
+                    problem={problems[currentProblemIndex]}
+                    answer={answer}
+                    onAnswerChange={setAnswer}
                   />
                   <div className="flex justify-end">
                     <Button
                       size="lg"
                       onClick={handleSubmit}
-                      disabled={!answer.trim()}
+                      disabled={!isAnswerValid(problems[currentProblemIndex], answer)}
                       className="px-8"
                     >
                       Submit Answer <ArrowRight className="w-4 h-4 ml-2" />
@@ -304,7 +353,9 @@ export default function ChallengePage() {
 
               <div className="opacity-50 pointer-events-none">
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">Your Answer:</h4>
-                <p className="text-muted-foreground text-sm line-clamp-3">{answer}</p>
+                <p className="text-muted-foreground text-sm line-clamp-3">
+                  {formatAnswerForSubmission(problems[currentProblemIndex], answer)}
+                </p>
               </div>
             </motion.div>
           )}

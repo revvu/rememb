@@ -26,6 +26,7 @@ model Source {
 
 model Session {
   id        String    @id @default(cuid())
+  viewerId  String    // Anonymous user ID from localStorage
   sourceId  String
   source    Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   startTime Int       // seconds into video
@@ -35,6 +36,8 @@ model Session {
   note      Note?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  @@index([viewerId, sourceId])
 }
 
 model Problem {
@@ -42,10 +45,11 @@ model Problem {
   sessionId   String
   session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   problemText String   @db.Text
-  problemType String   // construction, proof, optimization, application, connection, computational
+  problemType String   // recall, multiple_choice, multi_select, matching, true_false, fill_blank, ordering, numeric_fill, worked_variant, conceptual_pitfall, challenge
   difficulty  String   @default("medium") // easy, medium, hard
-  solution    String?  @db.Text
-  userAnswer  String?  @db.Text
+  options     String?  @db.Text  // JSON: for MC/multi-select: string[], for matching: {columnA: string[], columnB: string[]}, for ordering: string[]
+  solution    String?  @db.Text  // JSON: correct answer(s) - index, indices, boolean, or text depending on type
+  userAnswer  String?  @db.Text  // JSON: user's answer in same format as solution
   isCorrect   Boolean?
   feedback    String?  @db.Text
   order       Int      @default(0)

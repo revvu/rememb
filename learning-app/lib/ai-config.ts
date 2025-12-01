@@ -6,80 +6,109 @@
 
 export const AI_CONFIG = {
   /**
-   * Breakpoint Analysis
-   * Analyzes video transcripts to find natural pause points for learning challenges.
-   */
-  breakpointAnalysis: {
-    model: "claude-haiku-4-5-20251001",
-    maxTokens: 2000,
-    prompt: (transcript: string, duration: number) => `Analyze this video transcript and identify natural breakpoints where it would be good to pause and test understanding. Look for:
-- Topic transitions ("Now let's move on to...", "In the next section...")
-- Completion of a concept or idea
-- End of worked examples
-- Natural pauses before new material
-
-Video duration: ${duration} seconds
-
-Transcript:
-${transcript.slice(0, 15000)}
-
-Return ONLY a JSON array of breakpoints, no other text:
-[{ "timestamp": <seconds>, "reason": "<brief reason>" }]
-
-Aim for breakpoints roughly every 10-15 minutes for long videos, but prioritize natural transitions over arbitrary time intervals. For short videos (<10 min), identify 1-2 key breakpoints. Always include at least one breakpoint.`
-  },
-
-  /**
    * Challenge Generation
-   * Creates challenging problems based on video content to test deep understanding.
+   * Creates textbook-style problems based on a segment of video content the user just watched.
+   * Called when user clicks "Check me" to test their understanding of recent content.
    */
   challengeGeneration: {
     model: "claude-haiku-4-5-20251001",
-    maxTokens: 2048,
-    prompt: (title: string, transcript: string) => `You are an expert educator who creates genuinely challenging problems that test deep understanding, not surface-level recall.
+    maxTokens: 4096,
+    prompt: (title: string, transcript: string) => `You are an expert educator. A learner just watched a segment of a video titled "${title}" and clicked "Check me" to test their understanding.
 
-Based on the following video transcript titled "${title}", generate 3 challenging problems that:
-1. Require 5-15 minutes of thought to solve
-2. Test actual understanding, not memorization
-3. Make the learner think "oh, I didn't see it that way before"
-4. Are engaging and interesting to work on
+Your job is to generate a diverse set of practice problems based ONLY on this specific segment.
 
-TRANSCRIPT:
+SEGMENT TRANSCRIPT:
 ${transcript}
 
-Create 3 problems of these types:
-1. "construction" - Design/build something that satisfies constraints from the content
-2. "application" - Apply a concept to a novel, unexpected scenario
-3. "connection" - Connect ideas from the content to something broader or in a different domain
+Create a VARIETY of problem types from the following categories:
 
-Output strictly valid JSON with this structure:
+**Open-ended types (user types answer):**
+- "recall" - short factual questions about key definitions or concepts
+- "numeric_fill" - compute a value using formulas/procedures from the segment
+- "fill_blank" - complete a sentence with a missing key term
+
+**Structured types (user selects answer):**
+- "multiple_choice" - select ONE correct answer from 4 options
+- "multi_select" - select ALL correct answers (2+ correct options)
+- "true_false" - determine if a statement is true or false
+- "matching" - match items from column A to column B
+- "ordering" - arrange items in the correct sequence
+
+**FORMAT FOR EACH TYPE:**
+
+For "recall", "numeric_fill", "fill_blank":
+{
+  "type": "recall",
+  "text": "What is the definition of ____?",
+  "difficulty": "Easy"
+}
+
+For "multiple_choice":
+{
+  "type": "multiple_choice",
+  "text": "Which of the following best describes ____?",
+  "options": ["Option A", "Option B", "Option C", "Option D"],
+  "correctAnswer": 0,
+  "difficulty": "Medium"
+}
+
+For "multi_select":
+{
+  "type": "multi_select",
+  "text": "Select ALL that apply: Which of these are ____?",
+  "options": ["Option A", "Option B", "Option C", "Option D"],
+  "correctAnswer": [0, 2],
+  "difficulty": "Medium"
+}
+
+For "true_false":
+{
+  "type": "true_false",
+  "text": "True or False: [Statement about content]",
+  "correctAnswer": true,
+  "difficulty": "Easy"
+}
+
+For "matching":
+{
+  "type": "matching",
+  "text": "Match each term with its definition:",
+  "columnA": ["Term 1", "Term 2", "Term 3"],
+  "columnB": ["Definition A", "Definition B", "Definition C"],
+  "correctAnswer": [1, 0, 2],
+  "difficulty": "Medium"
+}
+
+For "ordering":
+{
+  "type": "ordering",
+  "text": "Arrange these steps in the correct order:",
+  "options": ["Step shown second", "Step shown first", "Step shown third"],
+  "correctAnswer": [1, 0, 2],
+  "difficulty": "Medium"
+}
+
+**RULES:**
+1. Create 4-6 problems total
+2. Include AT LEAST 2 structured types (multiple_choice, multi_select, true_false, matching, or ordering)
+3. Mix difficulty levels: 2 Easy, 2-3 Medium, 1 Hard
+4. All questions must be answerable from the segment content only
+5. Keep questions concise (1-2 sentences max)
+6. For multiple choice, make distractors plausible but clearly wrong
+7. For matching, shuffle columnB so correctAnswer is not [0,1,2...]
+
+Output strictly valid JSON:
 {
   "problems": [
-    {
-      "id": "p1",
-      "type": "construction",
-      "text": "...",
-      "difficulty": "Medium"
-    },
-    {
-      "id": "p2",
-      "type": "application",
-      "text": "...",
-      "difficulty": "Hard"
-    },
-    {
-      "id": "p3",
-      "type": "connection",
-      "text": "...",
-      "difficulty": "Medium"
-    }
+    { ... problem 1 ... },
+    { ... problem 2 ... }
   ]
 }
 
 IMPORTANT:
-- Problems must be specifically about the content in the transcript, not generic
-- Each problem should require genuine thinking and creativity
-- Do not include markdown formatting. Just the raw JSON string.`
+- Return ONLY the JSON object, no markdown or explanation
+- Ensure all correctAnswer indices are valid (0-indexed)
+- Make sure JSON is syntactically valid`,
   },
 
   /**

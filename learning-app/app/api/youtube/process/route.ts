@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
 import prisma from '@/lib/prisma'
-import { AI_CONFIG } from '@/lib/ai-config'
 
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url: string): string | null {
@@ -87,31 +85,6 @@ function estimateDuration(segments: { start: number; duration: number }[]): numb
   return Math.ceil(lastSegment.start + lastSegment.duration)
 }
 
-// Analyze transcript with Claude to find natural breakpoints
-async function analyzeBreakpoints(transcript: string, duration: number): Promise<{ timestamp: number; reason: string }[]> {
-  try {
-    const config = AI_CONFIG.breakpointAnalysis
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-    const response = await anthropic.messages.create({
-      model: config.model,
-      max_tokens: config.maxTokens,
-      messages: [{
-        role: 'user',
-        content: config.prompt(transcript, duration)
-      }]
-    })
-
-    // Parse JSON from response
-    const text = response.content[0].type === 'text' ? response.content[0].text : ''
-    const jsonMatch = text.match(/\[[\s\S]*\]/)
-    return jsonMatch ? JSON.parse(jsonMatch[0]) : []
-  } catch (error) {
-    console.error('Breakpoint analysis error:', error)
-    return [] // Return empty array on failure, frontend will use fallback logic
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json()
@@ -160,10 +133,7 @@ export async function POST(request: NextRequest) {
     // Fetch video metadata using oEmbed (lightweight, no filesystem access)
     const { title, thumbnail } = await getVideoMetadata(videoId)
 
-    // Analyze transcript for natural breakpoints
-    const breakpoints = await analyzeBreakpoints(transcript, duration)
-
-    // Store in database
+    // Store in database (no breakpoints - user triggers checks manually)
     const source = await prisma.source.create({
       data: {
         title,
@@ -171,8 +141,7 @@ export async function POST(request: NextRequest) {
         videoId,
         transcript,
         duration,
-        thumbnail,
-        breakpoints: JSON.stringify(breakpoints)
+        thumbnail
       }
     })
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
+import { useViewerId } from "@/lib/useViewerId";
 
 // Dynamic import to avoid SSR issues with ReactPlayer
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,28 +26,23 @@ interface Source {
   transcript: string;
   duration: number;
   thumbnail: string | null;
-  breakpoints: string | null;
-}
-
-interface Breakpoint {
-  timestamp: number;
-  reason: string;
 }
 
 export default function LearningPage() {
   const params = useParams();
   const router = useRouter();
+  const viewerId = useViewerId();
   const [source, setSource] = useState<Source | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isNotesOpen, setIsNotesOpen] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [readyForChallenge, setReadyForChallenge] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [playerReady, setPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
-  const [currentBreakpoint, setCurrentBreakpoint] = useState<Breakpoint | null>(null);
+  const [lastCheckpoint, setLastCheckpoint] = useState(0);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
 
   // Fetch source data with retry logic for database consistency
   useEffect(() => {
@@ -76,32 +72,63 @@ export default function LearningPage() {
     }
   }, [params.sourceId]);
 
-  // Parse breakpoints from source
-  const breakpoints: Breakpoint[] = source?.breakpoints
-    ? JSON.parse(source.breakpoints)
-    : [];
-
-  // Enable challenge button when user reaches a breakpoint
+  // Fetch last checkpoint from previous sessions
   useEffect(() => {
-    if (breakpoints.length === 0) {
-      // Fallback: enable after 10% or 60 seconds if no breakpoints
-      if (progress >= 10 || currentTime >= 60) {
-        setReadyForChallenge(true);
+    async function fetchLastCheckpoint() {
+      if (!viewerId || !params.sourceId) return;
+
+      try {
+        const response = await fetch(
+          `/api/sessions?viewerId=${viewerId}&sourceId=${params.sourceId}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setLastCheckpoint(data.lastCheckpoint || 0);
+        }
+      } catch (err) {
+        console.error('Failed to fetch last checkpoint:', err);
       }
+    }
+
+    fetchLastCheckpoint();
+  }, [viewerId, params.sourceId]);
+
+  // Handle "Check me" button click
+  const handleCheckMe = async () => {
+    if (!viewerId || !source || isCreatingSession) return;
+
+    // Require at least 10 seconds of new content
+    if (currentTime - lastCheckpoint < 10) {
       return;
     }
 
-    // Find the first breakpoint we've passed
-    const passedBreakpoint = breakpoints.find(bp => currentTime >= bp.timestamp);
-    if (passedBreakpoint && !readyForChallenge) {
-      setReadyForChallenge(true);
-      setCurrentBreakpoint(passedBreakpoint);
+    setIsCreatingSession(true);
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          viewerId,
+          sourceId: source.id,
+          startTime: Math.floor(lastCheckpoint),
+          endTime: Math.floor(currentTime),
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        router.push(`/learn/${params.sourceId}/challenge?sessionId=${data.session.id}`);
+      }
+    } catch (err) {
+      console.error('Failed to create session:', err);
+    } finally {
+      setIsCreatingSession(false);
     }
-  }, [currentTime, breakpoints.length, progress, readyForChallenge]);
+  };
 
   // Parse transcript into timeline notes
   const parseTranscriptNotes = (transcript: string) => {
-    const lines = transcript.split('\n').slice(0, 10); // First 10 lines for sidebar
+    const lines = transcript.split('\n').slice(0, 10);
     return lines.map(line => {
       const match = line.match(/\[(\d+:\d+)\]\s*(.*)/);
       if (match) {
@@ -111,28 +138,32 @@ export default function LearningPage() {
     }).filter(note => note.text.trim());
   };
 
-  // Extract key concepts from transcript (simple word frequency approach)
+  // Extract key concepts from transcript
   const extractKeyConcepts = (transcript: string): string[] => {
     const commonWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'as', 'by', 'this', 'that', 'it', 'so', 'we', 'you', 'i', 'they', 'what', 'when', 'where', 'how', 'why', 'all', 'can', 'will', 'just', 'like', 'about', 'be', 'have', 'do', 'if', 'from', 'not', 'your', 'our', 'their', 'these', 'those', 'more', 'some', 'then', 'now', 'here', 'there', 'going', 'would', 'could', 'should', 'than', 'them', 'us', 'me', 'my', 'his', 'her', 'its', 'out', 'up', 'down', 'over', 'into', 'very', 'also', 'only', 'other', 'get', 'got', 'make', 'made', 'thing', 'things', 'way', 'because', 'think', 'know', 'see', 'look', 'want', 'give', 'take', 'come', 'say', 'said']);
 
-    // Clean transcript and extract words
     const words = transcript.toLowerCase()
-      .replace(/\[\d+:\d+\]/g, '') // Remove timestamps
+      .replace(/\[\d+:\d+\]/g, '')
       .replace(/[^a-z\s]/g, ' ')
       .split(/\s+/)
       .filter(word => word.length > 4 && !commonWords.has(word));
 
-    // Count word frequency
     const wordCount = new Map<string, number>();
     words.forEach(word => {
       wordCount.set(word, (wordCount.get(word) || 0) + 1);
     });
 
-    // Get top 6 words
     return Array.from(wordCount.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6)
       .map(([word]) => word.charAt(0).toUpperCase() + word.slice(1));
+  };
+
+  // Format seconds as M:SS
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   if (isLoading) {
@@ -161,20 +192,8 @@ export default function LearningPage() {
 
   const notes = parseTranscriptNotes(source.transcript);
   const keyConcepts = extractKeyConcepts(source.transcript);
-
-  // Calculate next breakpoint and time remaining
-  const nextUpcomingBreakpoint = breakpoints.find(bp => currentTime < bp.timestamp);
-  const timeToNext = nextUpcomingBreakpoint ? nextUpcomingBreakpoint.timestamp - currentTime : null;
-
-  // Format seconds as M:SS
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Debug logging
-  console.log('Video URL:', source.url);
+  const watchedSinceCheckpoint = currentTime - lastCheckpoint;
+  const canCheckMe = watchedSinceCheckpoint >= 10;
 
   return (
     <div className="h-screen w-full flex flex-col bg-background overflow-hidden">
@@ -190,45 +209,33 @@ export default function LearningPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-3 text-xs text-muted-foreground mr-2">
-            {/* Custom progress bar with breakpoint markers */}
-            <div className="relative w-32 h-2 bg-secondary rounded-full overflow-visible">
-              {/* Progress fill */}
+            {/* Simple progress bar */}
+            <div className="relative w-32 h-2 bg-secondary rounded-full overflow-hidden">
               <div
                 className="absolute inset-y-0 left-0 bg-primary rounded-full transition-all"
                 style={{ width: `${progress}%` }}
               />
-              {/* Breakpoint markers */}
-              {breakpoints.map((bp, i) => {
-                const position = (bp.timestamp / source.duration) * 100;
-                const isPassed = currentTime >= bp.timestamp;
-                return (
-                  <div
-                    key={i}
-                    className={`absolute top-1/2 w-2.5 h-2.5 rounded-full border-2 border-background ${
-                      isPassed ? 'bg-primary' : 'bg-muted-foreground'
-                    }`}
-                    style={{ left: `${position}%`, transform: 'translate(-50%, -50%)' }}
-                    title={bp.reason}
-                  />
-                );
-              })}
             </div>
             <span>{Math.round(progress)}%</span>
-            {timeToNext !== null && timeToNext > 0 && (
+            {canCheckMe && (
               <span className="text-primary font-medium">
-                Challenge in {formatTime(timeToNext)}
+                {formatTime(watchedSinceCheckpoint)} ready
               </span>
             )}
           </div>
           <Button
-            variant={readyForChallenge ? "default" : "secondary"}
+            variant={canCheckMe ? "default" : "secondary"}
             size="sm"
-            onClick={() => router.push(`/learn/${params.sourceId}/challenge`)}
-            className={`transition-all duration-500 ${readyForChallenge ? "animate-pulse shadow-[0_0_15px_rgba(var(--primary),0.5)]" : "opacity-50"}`}
-            disabled={!readyForChallenge}
+            onClick={handleCheckMe}
+            disabled={!canCheckMe || isCreatingSession}
+            className={canCheckMe ? "shadow-[0_0_15px_rgba(var(--primary),0.3)]" : "opacity-50"}
           >
-            <Brain className="w-4 h-4 mr-2" />
-            Start Challenge
+            {isCreatingSession ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Brain className="w-4 h-4 mr-2" />
+            )}
+            Check me
           </Button>
           <Button variant="outline" size="icon" onClick={() => setIsNotesOpen(!isNotesOpen)}>
             {isNotesOpen ? <ChevronRight className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
@@ -248,7 +255,6 @@ export default function LearningPage() {
               playing={isPlaying}
               controls
               onReady={() => {
-                console.log('Player ready');
                 setPlayerReady(true);
               }}
               onError={(e: Error) => {
@@ -257,17 +263,13 @@ export default function LearningPage() {
               }}
               onTimeUpdate={(e: React.SyntheticEvent<HTMLVideoElement>) => {
                 const target = e.target as HTMLVideoElement;
-                const currentTime = target.currentTime;
+                const time = target.currentTime;
                 const duration = target.duration || source.duration;
-                const played = duration > 0 ? currentTime / duration : 0;
-                console.log('TimeUpdate:', { currentTime, duration, played });
+                const played = duration > 0 ? time / duration : 0;
                 setProgress(played * 100);
-                setCurrentTime(currentTime);
+                setCurrentTime(time);
               }}
-              onPlay={() => {
-                console.log('Play event');
-                setIsPlaying(true);
-              }}
+              onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               config={{
                 youtube: {
@@ -334,29 +336,26 @@ export default function LearningPage() {
                     </div>
                   </div>
 
-                  {breakpoints.length > 0 && (
-                    <>
-                      <Separator className="bg-border/50" />
-                      <div className="space-y-3">
-                        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Challenge Points</h3>
-                        {breakpoints.map((bp, i) => {
-                          const isPassed = currentTime >= bp.timestamp;
-                          return (
-                            <div
-                              key={i}
-                              className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
-                                isPassed ? 'bg-primary/10' : 'hover:bg-white/5'
-                              }`}
-                            >
-                              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isPassed ? 'bg-primary' : 'bg-muted-foreground'}`} />
-                              <span className="text-xs font-mono text-primary flex-shrink-0">{formatTime(bp.timestamp)}</span>
-                              <span className="text-sm text-foreground/80 line-clamp-1">{bp.reason}</span>
-                            </div>
-                          );
-                        })}
+                  <Separator className="bg-border/50" />
+
+                  {/* Progress info */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Your Progress</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Last checkpoint:</span>
+                        <span className="font-mono text-primary">{formatTime(lastCheckpoint)}</span>
                       </div>
-                    </>
-                  )}
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Current position:</span>
+                        <span className="font-mono">{formatTime(currentTime)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">New content:</span>
+                        <span className="font-mono text-primary">{formatTime(watchedSinceCheckpoint)}</span>
+                      </div>
+                    </div>
+                  </div>
 
                   <Separator className="bg-border/50" />
 
@@ -376,11 +375,9 @@ export default function LearningPage() {
                       Ready to Test Your Understanding?
                     </h4>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      {readyForChallenge
-                        ? currentBreakpoint
-                          ? `Good stopping point: ${currentBreakpoint.reason}. Click 'Start Challenge' to test your understanding.`
-                          : "Great progress! Click 'Start Challenge' to test your understanding with AI-generated problems."
-                        : "Watch a bit more of the video to unlock challenges."}
+                      {canCheckMe
+                        ? `You've watched ${formatTime(watchedSinceCheckpoint)} of new content. Click 'Check me' to test your understanding!`
+                        : "Watch at least 10 seconds of new content, then click 'Check me' whenever you want to test yourself."}
                     </p>
                   </div>
                 </div>
